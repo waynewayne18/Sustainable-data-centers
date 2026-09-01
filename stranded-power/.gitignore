@@ -1,0 +1,39 @@
+# Downloaded source data — never commit.
+# The flood map alone is 5GB. Git stores every version of every file
+# forever, so committing these once makes the repo permanently huge even
+# if you delete them later.
+# Re-download using the list in TOOLS.md.
+data/raw/*
+!data/raw/.gitkeep
+
+# Cached burned layers. Small, but derived — regenerate by re-running.
+data/processed/*
+!data/processed/.gitkeep
+
+# Generated maps and overlays
+out/*
+!out/.gitkeep
+
+# Vendored Leaflet, if you download it locally
+vendor/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local Claude Code settings (CLAUDE.md itself IS committed — it's the
+# project's shared context and belongs in version control)
+.claude/settings.local.json

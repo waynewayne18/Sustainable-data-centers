@@ -1,0 +1,17 @@
+# Core — the skeleton runs on exactly this.
+# Versions are what the pipeline was verified against; newer is likely fine.
+
+geopandas==1.1.4        # vector data, CRS handling
+rasterio==1.4.4         # rasterisation, reprojection, GeoTIFF
+shapely==2.1.2          # geometry ops (geopandas dep, pinned deliberately)
+pyproj==3.7.2           # projections (geopandas dep, pinned deliberately)
+numpy==2.4.4
+pandas==3.0.2
+
+folium==0.20.0          # web map output
+matplotlib==3.10.9      # colour mapping for overlays
+pillow==12.2.0          # PNG writing
+
+requests==2.33.1        # every API in the project
+openpyxl==3.1.5         # government data ships as .xlsx more often than you'd like
+pyogrio==0.13.0         # layer listing, fast vector IO (geopandas backend)
