@@ -16,6 +16,7 @@ from sp.layers import burn_cached, england_mask, distance_from_protected
 from sp.score import Model
 from sp.sites import pick_sites
 from sp.sitemap import site_map
+from sp.waterstress import water_stress
 
 ALC = "data/raw/alc.geojson"
 CURTAILMENT_NPY = "data/processed/curtailment_1300x700_1000_s20.npy"
@@ -66,14 +67,20 @@ def main():
     print(f"  {high_curtailment.sum():,} cells qualify "
           f"({high_curtailment.sum() / grid.n_land:.1%} of land)")
 
+    stressed, assessed = water_stress(grid)
+    # Cells outside England are unassessed — they pass the filter rather than
+    # being treated as stressed. Only assessed English cells can fail it.
+    outside_water_stress = ~stressed | ~assessed | ~eng
+
     flags = {
-        "High curtailment":                 high_curtailment,
-        "Avoids best farmland":             ~best_farmland & eng,
-        "At least 2km from protected land": distance_from_protected(
+        "High curtailment":                   high_curtailment,
+        "Avoids best farmland":               ~best_farmland & eng,
+        "At least 2km from protected land":   distance_from_protected(
             grid, parks, sssi, min_dist_m=2000),
+        "Outside a water-stressed area (England)": outside_water_stress,
     }
 
-    sites = pick_sites(grid, score, n=500, min_km=5, flags=flags)
+    sites = pick_sites(grid, score, n=5000, min_km=5, flags=flags)
     print(f"\npicked {len(sites)} sites, min 5km apart")
     for s in sites[:6]:
         tag = f"  [{', '.join(s['flags'])}]" if s["flags"] else "  [fails farmland]"
@@ -83,6 +90,12 @@ def main():
         sites, flags, grid,
         title="Common Ground",
         subtitle="",
+        captions={
+            "Outside a water-stressed area (England)": (
+                "Environment Agency determination 2021. "
+                "England only — Scotland and Wales have no equivalent assessment."
+            ),
+        },
     )
     print(f"\nwrote {out}")
 

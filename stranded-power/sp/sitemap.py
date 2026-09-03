@@ -124,22 +124,27 @@ TEMPLATE = """<!doctype html>
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── Rank buttons ─────────────────────────────────────────────── */
-  #rank-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-  #rank-btns button {
+  /* ── Rank slider ──────────────────────────────────────────────── */
+  .rank-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  #rank-slider {
     flex: 1;
-    padding: 4px 2px;
-    background: none;
-    border: 1px solid #DEDED6;
-    border-radius: 2px;
-    color: #5A5A55;
+    accent-color: #1F5673;
+    cursor: pointer;
+  }
+  #rank-val {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    cursor: pointer;
+    color: #1F5673;
+    width: 3.5rem;
+    text-align: right;
+    flex: none;
   }
-  #rank-btns button:hover { border-color: #1A1A1A; color: #1A1A1A; }
-  #rank-btns button.active { border-color: #1F5673; color: #1F5673; }
 
   /* ── Checkbox labels ──────────────────────────────────────────── */
   label {
@@ -153,6 +158,7 @@ TEMPLATE = """<!doctype html>
   }
   label:last-child { border-bottom: none; }
   label:hover { background: #E8E8E2; }
+  .flag-caption { font-size: 11px; color: #5A5A55; margin: 3px 0 0 21px; line-height: 1.4; }
   input[type=checkbox] {
     margin: 2px 0 0;
     accent-color: #1F5673;
@@ -295,12 +301,9 @@ TEMPLATE = """<!doctype html>
 
   <div>
     <h2>Show top N sites</h2>
-    <div id="rank-btns">
-      <button data-n="100">100</button>
-      <button data-n="200">200</button>
-      <button data-n="300">300</button>
-      <button data-n="400">400</button>
-      <button data-n="500" class="active">500</button>
+    <div class="rank-row">
+      <input id="rank-slider" type="range" min="0" max="5000" step="50" value="5000">
+      <span id="rank-val">5,000</span>
     </div>
   </div>
 
@@ -339,6 +342,7 @@ TEMPLATE = """<!doctype html>
 <script>
 const SITES = __DATA__;
 const FLAGS = __FLAGS__;
+const CAPTIONS = __CAPTIONS__;
 const TOTAL = SITES.length;
 
 // ── Panel is built here, BEFORE any Leaflet call. ────────────────────────
@@ -349,16 +353,24 @@ FLAGS.forEach(f => {
   el.innerHTML = `<input type="checkbox" data-flag="${f}"><span>${f}</span>`
                + `<span class="n"></span>`;
   filters.appendChild(el);
+  if (CAPTIONS[f]) {
+    const cap = document.createElement('p');
+    cap.className = 'flag-caption';
+    cap.textContent = CAPTIONS[f];
+    filters.appendChild(cap);
+  }
 });
 
 let rankLimit = TOTAL;
-document.querySelectorAll('#rank-btns button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#rank-btns button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    rankLimit = parseInt(btn.dataset.n);
-    draw();
-  });
+const slider = document.getElementById('rank-slider');
+const rankVal = document.getElementById('rank-val');
+slider.max = TOTAL;
+slider.value = TOTAL;
+rankVal.textContent = TOTAL.toLocaleString();
+slider.addEventListener('input', () => {
+  rankLimit = parseInt(slider.value);
+  rankVal.textContent = rankLimit.toLocaleString();
+  draw();
 });
 
 // ── Tab switching ─────────────────────────────────────────────────────────
@@ -475,11 +487,13 @@ draw();
 def site_map(sites, flags, grid, path="out/sites.html",
              title="Candidate Sites",
              subtitle="Tick a requirement — only sites meeting all ticked conditions are shown.",
+             captions=None,
              leaflet_css=CDN_CSS, leaflet_js=CDN_JS):
     """Write the interactive site map to `path`.
 
-    flags : dict of {display_name: bool_array} — one entry per checkbox.
-    grid  : Grid object — used for the land mask extent.
+    flags    : dict of {display_name: bool_array} — one entry per checkbox.
+    captions : dict of {display_name: caption_text} — optional sub-label per checkbox.
+    grid     : Grid object — used for the land mask extent.
     """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
@@ -490,6 +504,7 @@ def site_map(sites, flags, grid, path="out/sites.html",
             .replace("__JS__",       leaflet_js)
             .replace("__DATA__",     json.dumps(sites))
             .replace("__FLAGS__",    json.dumps(list(flags)))
+            .replace("__CAPTIONS__", json.dumps(captions or {}))
             .replace("__TOTAL__",    str(len(sites))))
 
     with open(path, "w") as f:
