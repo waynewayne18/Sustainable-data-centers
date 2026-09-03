@@ -83,7 +83,18 @@ TEMPLATE = """<!doctype html>
   #panel { width: 310px; flex: none; background: var(--panel);
            border-right: 1px solid var(--line); padding: 18px 18px 24px;
            overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #tab-bar { flex: none; display: flex; border-bottom: 1px solid var(--line);
+             background: var(--panel); }
+  .tab { flex: 1; padding: 9px 12px; background: none; border: none;
+         border-bottom: 2px solid transparent; color: var(--dim);
+         font: 0.82rem var(--sans); cursor: pointer;
+         transition: color 120ms, border-color 120ms; }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  #pane-map { flex: 1; display: flex; }
   #map { flex: 1; }
+  #pane-coords { flex: 1; padding: 24px; overflow-y: auto; }
 
   h1 { font-size: 1.05rem; margin: 0; letter-spacing: -0.01em; }
   .sub { font-size: 0.78rem; color: var(--dim); margin: 4px 0 0; line-height: 1.45; }
@@ -172,7 +183,18 @@ TEMPLATE = """<!doctype html>
   </div>
 </div>
 
-<div id="map"></div>
+<div id="main">
+  <div id="tab-bar">
+    <button class="tab active" data-pane="pane-map">Map</button>
+    <button class="tab" data-pane="pane-coords">Coordinates</button>
+  </div>
+  <div id="pane-map">
+    <div id="map"></div>
+  </div>
+  <div id="pane-coords" style="display:none">
+    <h2>Coordinates</h2>
+  </div>
+</div>
 
 <script src="__JS__"></script>
 <script>
@@ -200,10 +222,24 @@ document.querySelectorAll('#rank-btns button').forEach(btn => {
   });
 });
 
-// ── Leaflet map (optional — wrapped so offline doesn't break the demo). ──
+// ── Tab switching ─────────────────────────────────────────────────────────
+// Wired before Leaflet so tabs work with no network. Filters live in #panel
+// and are untouched by switching tabs.
 let map = null;
 let markerLayer = null;
 
+document.querySelectorAll('#tab-bar .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tab-bar .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['pane-map', 'pane-coords'].forEach(id => {
+      document.getElementById(id).style.display = id === btn.dataset.pane ? '' : 'none';
+    });
+    if (btn.dataset.pane === 'pane-map' && map) map.invalidateSize();
+  });
+});
+
+// ── Leaflet map (optional — wrapped so offline doesn't break the demo). ──
 try {
   map = L.map('map', {zoomControl: true}).setView([54.6, -3.2], 6);
   L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2t3z_1_3c570bf24e91b3a22f2de003',
