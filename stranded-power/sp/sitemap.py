@@ -262,22 +262,6 @@ TEMPLATE = """<!doctype html>
     padding-right: 0;
   }
 
-  /* ── Preset button ───────────────────────────────────────────── */
-  #btn-preset {
-    display: block;
-    width: 100%;
-    padding: 7px 12px;
-    background: #1F5673;
-    color: #FAFAF8;
-    border: none;
-    border-radius: 2px;
-    font-family: inherit;
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
-  }
-  #btn-preset:hover { background: #194558; }
-
   /* ── Responsive ───────────────────────────────────────────────── */
   @media (max-width: 720px) {
     body { flex-direction: column; }
@@ -304,11 +288,6 @@ TEMPLATE = """<!doctype html>
       <input id="rank-slider" type="range" min="0" max="5000" step="50" value="5000">
       <span id="rank-val">5,000</span>
     </div>
-  </div>
-
-  <div>
-    <h2>Preset</h2>
-    <button id="btn-preset">Within 50km of a curtailed wind farm</button>
   </div>
 
   <div>
@@ -429,8 +408,14 @@ function draw() {
       L.circleMarker([s.lat, s.lon], {
         radius: 4, className: 'pin',
         fillColor: '#4eab9c', fillOpacity: 0.8, weight: 1, color: '#0d1817',
-      }).bindPopup(`<b>#${s.rank}</b> ${s.council}<br>score ${s.score}`)
-        .addTo(markerLayer);
+      }).bindTooltip(
+          `<b>#${s.rank}</b> ${s.council}` +
+          `<span style="display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#5A5A55;margin-top:4px">` +
+          `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}<br>` +
+          `${s.easting}E ${s.northing}N` +
+          `</span>`,
+          {sticky: true}
+        ).addTo(markerLayer);
     });
   }
 
@@ -466,13 +451,6 @@ function draw() {
       ).join('')
     + '</tbody></table>';
 }
-
-document.getElementById('btn-preset').addEventListener('click', () => {
-  document.querySelectorAll('#filters input').forEach(cb => { cb.checked = false; });
-  const cb = document.querySelector('#filters input[data-flag="Within 50km of a curtailed wind farm"]');
-  if (cb) { cb.checked = true; }
-  draw();
-});
 
 filters.addEventListener('change', draw);
 draw();

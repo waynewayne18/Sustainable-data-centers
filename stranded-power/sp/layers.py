@@ -53,6 +53,8 @@ def burn_cached(
     cache_path = _CACHE_DIR / f"{key}.npy"
 
     if cache_path.exists():
+        if not path.exists():
+            return np.load(cache_path).astype(bool)
         src_mtime = path.stat().st_mtime
         cache_mtime = cache_path.stat().st_mtime
         if cache_mtime >= src_mtime:
