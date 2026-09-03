@@ -30,10 +30,13 @@ GeoJSON or shapefile and point BOUNDARY at that.
 """
 
 import os
+from pathlib import Path
 
 import numpy as np
 
-from sp.layers import burn_cached
+from sp.grid import burn
+
+_CACHE_DIR = Path("data/processed")
 
 BOUNDARY = "data/raw/water_company_areas.geojson"
 
@@ -129,6 +132,15 @@ OUT_OF_SCOPE = {
 }
 
 
+def _out_of_scope(company, area):
+    # Welsh companies are outside the determination's scope entirely.
+    # Matched on substring because Dwr Cymru's name arrives variously as
+    # "Dŵr Cymru", "DÅµr Cymru" or "Dwr Cymru" depending on encoding.
+    if "Cymru" in company or "Hafren" in company:
+        return True
+    return (company, area) in OUT_OF_SCOPE
+
+
 def _norm(s):
     """Names arrive with stray whitespace and mangled accents."""
     return " ".join(str(s).replace("µ", "w").split()).strip()
@@ -164,7 +176,7 @@ def check(path=BOUNDARY):
     unmatched, counts = [], {"stressed": 0, "not": 0, "out of scope": 0}
     for _, r in gdf.iterrows():
         key = (_norm(r["COMPANY"]), _norm(r["AreaServed"]))
-        if key in OUT_OF_SCOPE:
+        if _out_of_scope(key[0], key[1]):
             counts["out of scope"] += 1
         elif key not in JOIN:
             unmatched.append(key)
@@ -203,14 +215,29 @@ def water_stress(grid, path=BOUNDARY):
     gdf["AreaServed"] = gdf["AreaServed"].map(_norm)
 
     pairs = list(zip(gdf["COMPANY"], gdf["AreaServed"]))
+    is_oos = [_out_of_scope(c, a) for c, a in pairs]
     entry = [JOIN.get(p) for p in pairs]
 
-    gdf["_stressed"] = [1 if e in STRESSED else 0 for e in entry]
-    gdf["_assessed"] = [0 if e is None else 1 for e in entry]
+    gdf["_stressed"] = [1 if (not oos) and e in STRESSED else 0
+                        for e, oos in zip(entry, is_oos)]
+    gdf["_assessed"] = [0 if oos or e is None else 1
+                        for e, oos in zip(entry, is_oos)]
 
-    stressed = burn_cached(grid, gdf[gdf["_stressed"] == 1], "water_stressed")
-    assessed = burn_cached(grid, gdf[gdf["_assessed"] == 1], "water_assessed")
-    return stressed.astype(bool), assessed.astype(bool)
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    shape_tag = f"{grid.shape[0]}x{grid.shape[1]}_{grid.cell_size}"
+
+    def _burn_or_load(name, mask):
+        p = _CACHE_DIR / f"{name}_{shape_tag}.npy"
+        src_mtime = Path(path).stat().st_mtime
+        if p.exists() and p.stat().st_mtime >= src_mtime:
+            return np.load(p).astype(bool)
+        arr = burn(grid, gdf[mask]).astype(bool)
+        np.save(p, arr)
+        return arr
+
+    stressed = _burn_or_load("water_stressed", gdf["_stressed"] == 1)
+    assessed = _burn_or_load("water_assessed", gdf["_assessed"] == 1)
+    return stressed, assessed
 
 
 if __name__ == "__main__":
