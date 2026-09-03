@@ -69,83 +69,198 @@ TEMPLATE = """<!doctype html>
 <title>__TITLE__</title>
 <link rel="stylesheet" href="__CSS__">
 <style>
-  :root {
-    --bg: #0d1817; --panel: #14201f; --line: #2c3d3b;
-    --ink: #dee8e5; --dim: #7c8d8a; --accent: #4eab9c; --warn: #dd8b3e;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
-    --sans: "IBM Plex Sans", -apple-system, system-ui, sans-serif;
-  }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { font-family: var(--sans); background: var(--bg); color: var(--ink);
-         display: flex; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #1A1A1A;
+    background: #FAFAF8;
+    display: flex;
+    overflow: hidden;
+  }
 
-  #panel { width: 310px; flex: none; background: var(--panel);
-           border-right: 1px solid var(--line); padding: 18px 18px 24px;
-           overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  /* ── Sidebar ──────────────────────────────────────────────────── */
+  #panel {
+    width: 300px;
+    flex: none;
+    background: #F2F2EE;
+    border-right: 1px solid #DEDED6;
+    padding: 0 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  #panel > div {
+    padding: 12px 0;
+    border-bottom: 1px solid #DEDED6;
+  }
+  #panel > div:last-child { border-bottom: none; }
+
+  h1 { font-size: 13px; font-weight: 600; margin: 0 0 3px; }
+  .sub { font-size: 12px; color: #5A5A55; margin: 0; }
+
+  h2 {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5A5A55;
+    margin: 0 0 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #DEDED6;
+  }
+
+  /* ── Live count ───────────────────────────────────────────────── */
+  .count .sites-line { display: block; font-size: 12px; color: #5A5A55; }
+  .count .sites-line b {
+    display: block;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #1F5673;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Rank buttons ─────────────────────────────────────────────── */
+  #rank-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  #rank-btns button {
+    flex: 1;
+    padding: 4px 2px;
+    background: none;
+    border: 1px solid #DEDED6;
+    border-radius: 2px;
+    color: #5A5A55;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  #rank-btns button:hover { border-color: #1A1A1A; color: #1A1A1A; }
+  #rank-btns button.active { border-color: #1F5673; color: #1F5673; }
+
+  /* ── Checkbox labels ──────────────────────────────────────────── */
+  label {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 16px;
+    margin: 0 -16px;
+    cursor: pointer;
+    border-bottom: 1px solid #DEDED6;
+  }
+  label:last-child { border-bottom: none; }
+  label:hover { background: #E8E8E2; }
+  input[type=checkbox] {
+    margin: 2px 0 0;
+    accent-color: #1F5673;
+    width: 13px;
+    height: 13px;
+    flex: none;
+  }
+  label .n {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #5A5A55;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Shortlist ────────────────────────────────────────────────── */
+  #list { font-size: 13px; }
+  .site {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid #DEDED6;
+    cursor: pointer;
+  }
+  .site:last-child { border-bottom: none; }
+  .site:hover { color: #1F5673; }
+  .site .r {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: #5A5A55;
+    width: 2rem;
+    flex: none;
+  }
+  .site .s {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: #5A5A55;
+  }
+
+  /* ── Main / tabs ──────────────────────────────────────────────── */
   #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  #tab-bar { flex: none; display: flex; border-bottom: 1px solid var(--line);
-             background: var(--panel); }
-  .tab { flex: 1; padding: 9px 12px; background: none; border: none;
-         border-bottom: 2px solid transparent; color: var(--dim);
-         font: 0.82rem var(--sans); cursor: pointer;
-         transition: color 120ms, border-color 120ms; }
-  .tab:hover { color: var(--ink); }
-  .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  #tab-bar {
+    flex: none;
+    display: flex;
+    background: #F2F2EE;
+    border-bottom: 1px solid #DEDED6;
+  }
+  .tab {
+    flex: 1;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: inherit;
+    font-size: 13px;
+    color: #5A5A55;
+    cursor: pointer;
+  }
+  .tab:hover { color: #1A1A1A; }
+  .tab.active { color: #1F5673; border-bottom-color: #1F5673; font-weight: 500; }
+
+  /* ── Map pane ─────────────────────────────────────────────────── */
   #pane-map { flex: 1; display: flex; }
   #map { flex: 1; }
-  #pane-coords { flex: 1; padding: 24px; overflow-y: auto; }
+  .leaflet-container { background: #FAFAF8; }
+  .pin { border-radius: 50%; border: 1px solid rgba(0,0,0,0.3); }
 
-  h1 { font-size: 1.05rem; margin: 0; letter-spacing: -0.01em; }
-  .sub { font-size: 0.78rem; color: var(--dim); margin: 4px 0 0; line-height: 1.45; }
-
-  .count { border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px; }
-  .count .label { font-size: 0.72rem; color: var(--dim); text-transform: uppercase;
-                  letter-spacing: 0.1em; }
-  .count b { font-family: var(--mono); font-size: 2rem; color: var(--accent);
-             display: block; line-height: 1.1; }
-  .count .unit { font-family: var(--mono); font-size: 0.75rem; color: var(--dim); }
-  .count .sites-line { font-size: 0.74rem; color: var(--dim); margin-top: 8px;
-                       display: block; border-top: 1px solid var(--line); padding-top: 8px; }
-  .count .sites-line b { font-family: var(--mono); font-size: inherit;
-                          color: var(--ink); display: inline; line-height: inherit; }
-
-  h2 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em;
-       color: var(--dim); margin: 0 0 8px; font-weight: 500; }
-
-  label { display: flex; gap: 9px; align-items: flex-start; padding: 7px 0;
-          cursor: pointer; font-size: 0.88rem; line-height: 1.35;
-          border-bottom: 1px solid var(--line); }
-  label:last-child { border-bottom: none; }
-  input[type=checkbox] { margin: 2px 0 0; accent-color: var(--accent);
-                         width: 15px; height: 15px; flex: none; }
-  label .n { margin-left: auto; font-family: var(--mono); font-size: 0.74rem;
-             color: var(--dim); }
-
-  #list { font-size: 0.8rem; }
-  .site { display: flex; gap: 8px; padding: 5px 0;
-          border-bottom: 1px solid var(--line); cursor: pointer; }
-  .site:hover { color: var(--accent); }
-  .site .r { font-family: var(--mono); color: var(--dim); width: 1.6rem; flex: none; }
-  .site .s { margin-left: auto; font-family: var(--mono); color: var(--accent); }
-
-  .leaflet-container { background: #e5e3df; }
-  .pin { border-radius: 50%; border: 1px solid rgba(0,0,0,0.4); }
-
-  #rank-btns { display: flex; gap: 5px; flex-wrap: wrap; }
-  #rank-btns button {
-    flex: 1; padding: 5px 4px; background: none; cursor: pointer;
-    border: 1px solid var(--line); border-radius: 3px;
-    color: var(--dim); font-family: var(--mono); font-size: 0.78rem;
-    transition: border-color 120ms, color 120ms;
+  /* ── Coordinates pane ─────────────────────────────────────────── */
+  #pane-coords { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  #coords-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
   }
-  #rank-btns button:hover { border-color: var(--ink); color: var(--ink); }
-  #rank-btns button.active { border-color: var(--accent); color: var(--accent); }
+  #coords-table th {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5A5A55;
+    padding: 0 16px 5px 0;
+    border-bottom: 1px solid #DEDED6;
+    text-align: left;
+  }
+  #coords-table th.r { text-align: right; padding-right: 0; }
+  #coords-table td {
+    padding: 4px 16px 4px 0;
+    border-bottom: 1px solid #DEDED6;
+    color: #1A1A1A;
+    text-align: left;
+  }
+  #coords-table td.r { text-align: right; padding-right: 0; }
+  #coords-table td.m {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    text-align: right;
+    padding-right: 0;
+  }
 
+  /* ── Responsive ───────────────────────────────────────────────── */
   @media (max-width: 720px) {
     body { flex-direction: column; }
     #panel { width: 100%; height: 46%; border-right: none;
-             border-bottom: 1px solid var(--line); }
+             border-bottom: 1px solid #DEDED6; }
   }
 </style>
 </head>
@@ -193,6 +308,7 @@ TEMPLATE = """<!doctype html>
   </div>
   <div id="pane-coords" style="display:none">
     <h2>Coordinates</h2>
+    <div id="coords-table"></div>
   </div>
 </div>
 
@@ -300,6 +416,22 @@ function draw() {
       `<span>${s.council}</span><span class="s">${s.score}</span></div>`
     ).join('');
   }
+
+  // ── Coordinates table (same shown array — row count equals sidebar count) ─
+  document.getElementById('coords-table').innerHTML = shown.length === 0
+    ? '<p style="color:#5A5A55;font-size:12px">No sites match current filters.</p>'
+    : '<table><thead><tr>'
+    + '<th class="r">Rank</th><th class="r">Score</th><th>Local authority</th>'
+    + '<th class="r">Easting</th><th class="r">Northing</th>'
+    + '<th class="r">Lat</th><th class="r">Lon</th>'
+    + '</tr></thead><tbody>'
+    + shown.map(s =>
+        `<tr><td class="r">${s.rank}</td><td class="r">${s.score.toFixed(3)}</td>`
+      + `<td>${s.council}</td>`
+      + `<td class="m">${s.easting}</td><td class="m">${s.northing}</td>`
+      + `<td class="m">${s.lat.toFixed(5)}</td><td class="m">${s.lon.toFixed(5)}</td></tr>`
+      ).join('')
+    + '</tbody></table>';
 }
 
 filters.addEventListener('change', draw);

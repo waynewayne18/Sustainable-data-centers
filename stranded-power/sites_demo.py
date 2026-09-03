@@ -10,7 +10,7 @@ Writes out/sites.html.
 """
 
 from sp.grid import build_grid
-from sp.layers import burn_cached, grade_mask, repd_wind, england_mask, distance_from_protected
+from sp.layers import burn_cached, repd_wind, england_mask, distance_from_protected
 from sp.score import Model
 from sp.sites import pick_sites
 from sp.sitemap import site_map
@@ -51,7 +51,7 @@ def main():
     parks = burn_cached(grid, "data/raw/natural_parks.geojson")
     sssi  = burn_cached(grid, "data/raw/sssi.geojson")
 
-    best_farmland = grade_mask(grid, ALC, "ALC_GRADE", ["Grade 1", "Grade 2"])
+    best_farmland = burn_cached(grid, ALC, where={"ALC_GRADE": ["Grade 1", "Grade 2"]})
     flags = {
         "Avoids best farmland":           ~best_farmland & eng,
         "At least 2km from protected land": distance_from_protected(
@@ -66,9 +66,8 @@ def main():
 
     out = site_map(
         sites, flags, grid,
-        title="Stranded Power",
-        subtitle="Best sites for a data centre near stranded wind. "
-                 "Tick a requirement — only sites meeting all conditions are shown.",
+        title="Common Ground",
+        subtitle="",
     )
     print(f"\nwrote {out}")
 

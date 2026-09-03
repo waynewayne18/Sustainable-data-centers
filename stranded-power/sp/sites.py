@@ -57,7 +57,7 @@ def pick_sites(grid, score, n=40, min_km=25, flags=None, shortlist=60000):
         sites.append({
             "rank": len(sites) + 1,
             "row": int(r), "col": int(c),
-            "easting": float(east), "northing": float(north),
+            "easting": int(round(east)), "northing": int(round(north)),
             "score": round(float(v), 3),
             "council": lad,
             "flags": [k for k, a in flags.items() if bool(a[r, c])],
