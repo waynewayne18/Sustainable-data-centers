@@ -277,7 +277,6 @@ TEMPLATE = """<!doctype html>
     cursor: pointer;
   }
   #btn-preset:hover { background: #194558; }
-  .preset-caption { font-size: 11px; color: #5A5A55; margin: 5px 0 0; }
 
   /* ── Responsive ───────────────────────────────────────────────── */
   @media (max-width: 720px) {
@@ -309,8 +308,7 @@ TEMPLATE = """<!doctype html>
 
   <div>
     <h2>Preset</h2>
-    <button id="btn-preset">Show high-curtailment sites</button>
-    <p class="preset-caption">Measured curtailment. NESO wind BOA volumes, 2025/26.</p>
+    <button id="btn-preset">Within 50km of a curtailed wind farm</button>
   </div>
 
   <div>
@@ -471,7 +469,7 @@ function draw() {
 
 document.getElementById('btn-preset').addEventListener('click', () => {
   document.querySelectorAll('#filters input').forEach(cb => { cb.checked = false; });
-  const cb = document.querySelector('#filters input[data-flag="High curtailment"]');
+  const cb = document.querySelector('#filters input[data-flag="Within 50km of a curtailed wind farm"]');
   if (cb) { cb.checked = true; }
   draw();
 });

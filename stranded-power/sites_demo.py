@@ -10,6 +10,7 @@ Writes out/sites.html.
 """
 
 import numpy as np
+import pandas as pd
 
 from sp.grid import build_grid
 from sp.layers import burn_cached, england_mask, distance_from_protected
@@ -58,14 +59,22 @@ def main():
 
     best_farmland = burn_cached(grid, ALC, where={"ALC_GRADE": ["Grade 1", "Grade 2"]})
 
-    # High curtailment: top quartile of the curtailment surface among land cells.
-    curt_land = curtailment[np.isfinite(curtailment)]
-    thresh = float(np.percentile(curt_land, 75))
-    print(f"\nhigh_curtailment threshold: {thresh:.4f} "
-          f"(75th percentile, {curt_land.size:,} land cells)")
-    high_curtailment = np.isfinite(curtailment) & (curtailment >= thresh)
-    print(f"  {high_curtailment.sum():,} cells qualify "
-          f"({high_curtailment.sum() / grid.n_land:.1%} of land)")
+    # Near curtailed wind: cells within 50km of any farm that recorded curtailment.
+    # Coordinates from the matched review CSV — no percentile, no smoothing.
+    from scipy.ndimage import distance_transform_edt
+    _farms = pd.read_csv("out/curtailment_match_review.csv")
+    _farms = _farms[_farms["how"] != "UNMATCHED"]
+    _inv = ~grid.transform
+    _farm_mask = np.zeros(grid.shape, dtype=bool)
+    for _, _r in _farms.iterrows():
+        _c, _w = _inv * (_r["easting"], _r["northing"])
+        _c, _w = int(_c), int(_w)
+        if 0 <= _w < grid.shape[0] and 0 <= _c < grid.shape[1]:
+            _farm_mask[_w, _c] = True
+    _dist_m = distance_transform_edt(~_farm_mask) * grid.cell_size
+    near_curtailed_wind = (_dist_m <= 50_000) & grid.land
+    print(f"\nnear_curtailed_wind: {near_curtailed_wind.sum():,} land cells within 50km "
+          f"({near_curtailed_wind.sum() / grid.n_land:.1%} of land)")
 
     stressed, assessed = water_stress(grid)
     # Cells outside England are unassessed — they pass the filter rather than
@@ -73,9 +82,9 @@ def main():
     outside_water_stress = ~stressed | ~assessed | ~eng
 
     flags = {
-        "High curtailment":                   high_curtailment,
-        "Avoids best farmland":               ~best_farmland & eng,
-        "At least 2km from protected land":   distance_from_protected(
+        "Within 50km of a curtailed wind farm": near_curtailed_wind,
+        "Avoids best farmland":                 ~best_farmland & eng,
+        "At least 2km from protected land":     distance_from_protected(
             grid, parks, sssi, min_dist_m=2000),
         "Outside a water-stressed area (England)": outside_water_stress,
     }
@@ -89,7 +98,7 @@ def main():
     out = site_map(
         sites, flags, grid,
         title="Common Ground",
-        subtitle="",
+        subtitle="Model coverage: England. Curtailment analysis: Great Britain.",
         captions={
             "Outside a water-stressed area (England)": (
                 "Environment Agency determination 2021. "
