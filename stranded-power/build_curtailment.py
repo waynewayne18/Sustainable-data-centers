@@ -31,7 +31,11 @@ from scipy.ndimage import gaussian_filter
 
 from sp.grid import build_grid
 
-BOA = "data/raw/boa_2025_26.csv"
+BOA_FILES = [
+    "data/raw/boa_2023_24.csv",
+    "data/raw/boa_2024_25.csv",
+    "data/raw/boa_2025_26.csv",
+]
 OUT_NPY = "data/processed/curtailment_1300x700_1000_s20.npy"
 REVIEW = "out/curtailment_match_review.csv"
 SIGMA = 20                       # cells; 20km, matching your wind layer
@@ -43,6 +47,25 @@ NOISE = re.compile(
     r"station|energy|renewables|limited|ltd|plc|the|of|and)\b")
 
 
+DIRS = {"east", "west", "north", "south",
+        "eastern", "western", "northern", "southern"}
+
+
+def dir_clash(a, b):
+    """True if a and b carry different directional tokens — e.g. east vs west."""
+    da, db = DIRS & set(a.split()), DIRS & set(b.split())
+    return (da or db) and da != db
+
+
+# Applied before any matching. Keys are the raw Generator_Full_Name as it
+# appears in the BOA data; values are exact REPD Site Name spellings.
+# A loud OVERRIDE MISS line is printed if the REPD target isn't in the lookup.
+OVERRIDE = {
+    "Moray Firth Eastern 1": "Moray East",
+    "Moray West 1":          "Moray West Offshore Wind Farm Project",
+}
+
+
 def norm(name):
     """Reduce a farm name to its identifying core.
 
@@ -50,7 +73,7 @@ def norm(name):
     want: they are two BM units at one REPD site, and their curtailment
     should land on the same square.
     """
-    s = str(name).lower()
+    s = re.sub(r"\([^)]*\)", " ", str(name).lower())  # strip parentheticals first
     s = re.sub(r"[^a-z0-9 ]", " ", s)
     s = NOISE.sub(" ", s)
     s = re.sub(r"\b[0-9ivx]+\b", " ", s)      # trailing unit numbers
@@ -86,31 +109,58 @@ def pick(df, *fragments):
                    f"{list(df.columns)}")
 
 
-def main():
-    if not os.path.exists(BOA):
-        print(f"missing {BOA} - run explore_boa.py first")
-        return 1
+def _load_year(path):
+    """Return a per-farm curtailment DataFrame for one BOA file.
 
-    # ---------------------------------------------------------------- BOA
-    boa = pd.read_csv(BOA)
-    print(f"BOA rows: {len(boa):,}")
-
+    Returns columns: key, name, mwh — one row per normalised farm name.
+    """
+    boa = pd.read_csv(path)
     curt = boa[boa["BOA_Volume"] < 0].copy()
     curt["mwh"] = curt["BOA_Volume"].abs()
     per_unit = (curt.groupby(["Generator_Name", "Generator_Full_Name"])["mwh"]
                     .sum().reset_index())
     per_unit["key"] = per_unit["Generator_Full_Name"].map(norm)
-
     farms = (per_unit.groupby("key")
                      .agg(mwh=("mwh", "sum"),
-                          name=("Generator_Full_Name", "first"),
-                          units=("Generator_Name", "count"))
-                     .reset_index()
-                     .sort_values("mwh", ascending=False))
+                          name=("Generator_Full_Name", "first"))
+                     .reset_index())
+    return boa, farms
+
+
+def main():
+    missing = [f for f in BOA_FILES if not os.path.exists(f)]
+    if missing:
+        print("missing BOA files:")
+        for f in missing:
+            print(f"  {f}")
+        return 1
+
+    # ---------------------------------------------------------------- BOA
+    # Load each year separately, print per-year totals, then sum and divide
+    # by n_years for a mean annual figure. Farms absent in a year contribute
+    # 0 to that year's total — the mean is over years, not appearances.
+    print("Per-year curtailment:")
+    year_frames = []
+    for path in BOA_FILES:
+        label = (os.path.basename(path)
+                 .removeprefix("boa_").removesuffix(".csv").replace("_", "/"))
+        boa, yr = _load_year(path)
+        yr_total = yr["mwh"].sum()
+        print(f"  {label}: {len(boa):,} rows | "
+              f"{yr_total:,.0f} MWh across {len(yr)} farms")
+        year_frames.append(yr)
+
+    n_years = len(BOA_FILES)
+    combined = pd.concat(year_frames)
+    farms = (combined.groupby("key")
+                     .agg(mwh=("mwh", "sum"),
+                          name=("name", "first"))
+                     .reset_index())
+    farms["mwh"] = farms["mwh"] / n_years          # mean annual
+    farms = farms.sort_values("mwh", ascending=False)
     total = farms["mwh"].sum()
-    print(f"curtailed volume 2025/26: {total:,.0f} MWh across "
-          f"{len(farms)} farms ({per_unit.shape[0]} BM units)")
-    print("\ntop 10 by volume:")
+    print(f"\nmean annual ({n_years} years): {total:,.0f} MWh across {len(farms)} farms")
+    print("\ntop 10 by mean annual volume:")
     for _, r in farms.head(10).iterrows():
         print(f"  {r['mwh']:>12,.0f} MWh  {r['name']}")
 
@@ -144,12 +194,29 @@ def main():
     rows = []
     for _, f in farms.iterrows():
         k = f["key"]
+
+        # Manual override — applied before any matching.
+        if f["name"] in OVERRIDE:
+            target = OVERRIDE[f["name"]]
+            nk = norm(target)
+            if nk in lookup:
+                x, y, site = lookup[nk]
+                rows.append((f["name"], site, f["mwh"], x, y, 1.0, "override"))
+            else:
+                print(f"OVERRIDE MISS: '{f['name']}' -> '{target}' "
+                      f"(norm: '{nk}') not found in REPD lookup")
+                rows.append((f["name"], "", f["mwh"], np.nan, np.nan, 0.0,
+                             "UNMATCHED"))
+            continue
+
         if k in lookup:
             x, y, site = lookup[k]
             rows.append((f["name"], site, f["mwh"], x, y, 1.0, "exact"))
             continue
         best, score = None, 0.0
         for cand in keys:
+            if dir_clash(k, cand):
+                continue
             s = SequenceMatcher(None, k, cand).ratio()
             if s > score:
                 best, score = cand, s

@@ -256,6 +256,23 @@ TEMPLATE = """<!doctype html>
     padding-right: 0;
   }
 
+  /* ── Preset button ───────────────────────────────────────────── */
+  #btn-preset {
+    display: block;
+    width: 100%;
+    padding: 7px 12px;
+    background: #1F5673;
+    color: #FAFAF8;
+    border: none;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  #btn-preset:hover { background: #194558; }
+  .preset-caption { font-size: 11px; color: #5A5A55; margin: 5px 0 0; }
+
   /* ── Responsive ───────────────────────────────────────────────── */
   @media (max-width: 720px) {
     body { flex-direction: column; }
@@ -285,6 +302,12 @@ TEMPLATE = """<!doctype html>
       <button data-n="400">400</button>
       <button data-n="500" class="active">500</button>
     </div>
+  </div>
+
+  <div>
+    <h2>Preset</h2>
+    <button id="btn-preset">Show high-curtailment sites</button>
+    <p class="preset-caption">Measured curtailment. NESO wind BOA volumes, 2025/26.</p>
   </div>
 
   <div>
@@ -433,6 +456,13 @@ function draw() {
       ).join('')
     + '</tbody></table>';
 }
+
+document.getElementById('btn-preset').addEventListener('click', () => {
+  document.querySelectorAll('#filters input').forEach(cb => { cb.checked = false; });
+  const cb = document.querySelector('#filters input[data-flag="High curtailment"]');
+  if (cb) { cb.checked = true; }
+  draw();
+});
 
 filters.addEventListener('change', draw);
 draw();

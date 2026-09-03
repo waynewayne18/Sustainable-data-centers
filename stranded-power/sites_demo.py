@@ -9,13 +9,16 @@ the demo.
 Writes out/sites.html.
 """
 
+import numpy as np
+
 from sp.grid import build_grid
-from sp.layers import burn_cached, repd_wind, england_mask, distance_from_protected
+from sp.layers import burn_cached, england_mask, distance_from_protected
 from sp.score import Model
 from sp.sites import pick_sites
 from sp.sitemap import site_map
 
 ALC = "data/raw/alc.geojson"
+CURTAILMENT_NPY = "data/processed/curtailment_1300x700_1000_s20.npy"
 
 
 def main():
@@ -37,11 +40,12 @@ def main():
     # Scottish/Welsh sites would be immune to every checkbox, which is dishonest.
     m.exclude("non_england", ~eng)
 
-    # Score: proximity to stranded wind capacity only.
-    # ALC is a planning constraint (breach or don't), not a sliding score;
-    # it lives as the checkbox below rather than baked into the ranking.
-    m.add("wind", repd_wind(grid, "data/raw/repd.csv"), "energy",
-          higher_is_better=True)
+    # Score: measured curtailment volume (MWh, NESO BOA 2025/26), already
+    # normalised 0–1 and Gaussian-smoothed to sigma=20km. Curtailment is
+    # better information than capacity: it measures what the grid actually
+    # cannot absorb, not what was installed.
+    curtailment = np.where(grid.land, np.load(CURTAILMENT_NPY), np.nan)
+    m.add("curtailment", curtailment, "energy", higher_is_better=True)
 
     print(m.report())
     score = m.score()
@@ -52,8 +56,19 @@ def main():
     sssi  = burn_cached(grid, "data/raw/sssi.geojson")
 
     best_farmland = burn_cached(grid, ALC, where={"ALC_GRADE": ["Grade 1", "Grade 2"]})
+
+    # High curtailment: top quartile of the curtailment surface among land cells.
+    curt_land = curtailment[np.isfinite(curtailment)]
+    thresh = float(np.percentile(curt_land, 75))
+    print(f"\nhigh_curtailment threshold: {thresh:.4f} "
+          f"(75th percentile, {curt_land.size:,} land cells)")
+    high_curtailment = np.isfinite(curtailment) & (curtailment >= thresh)
+    print(f"  {high_curtailment.sum():,} cells qualify "
+          f"({high_curtailment.sum() / grid.n_land:.1%} of land)")
+
     flags = {
-        "Avoids best farmland":           ~best_farmland & eng,
+        "High curtailment":                 high_curtailment,
+        "Avoids best farmland":             ~best_farmland & eng,
         "At least 2km from protected land": distance_from_protected(
             grid, parks, sssi, min_dist_m=2000),
     }
