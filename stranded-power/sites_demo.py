@@ -1,68 +1,74 @@
-"""Interactive site map on synthetic data.
+"""Interactive site map — England only, wind-scored.
 
-Same pipeline as skeleton.py, but instead of a heat map it picks specific
-candidate sites and lets you rule them out with checkboxes.
+Score is proximity to operational wind capacity. Checkboxes are land-use
+constraints applied on top. Tick one and watch the count drop — that's
+the demo.
 
     python3 sites_demo.py
 
-Writes out/sites.html. Tick a constraint and watch the count fall — that
-falling number is the demo.
+Writes out/sites.html.
 """
 
-import numpy as np
-
 from sp.grid import build_grid
+from sp.layers import burn_cached, grade_mask, repd_wind, england_mask, distance_from_protected
 from sp.score import Model
 from sp.sites import pick_sites
 from sp.sitemap import site_map
-from skeleton import synthetic, synthetic_exclusion
+
+ALC = "data/raw/alc.geojson"
 
 
 def main():
     grid = build_grid()
     print(f"grid {grid.shape} | {grid.n_land:,} land cells")
 
-    m = Model(grid)
-    m.exclude("flood", synthetic_exclusion(grid, seed=1))
-    m.exclude("protected", synthetic_exclusion(grid, seed=2, n=25))
+    eng = england_mask(grid)
+    print(f"England land cells: {eng.sum():,}")
 
-    m.add("carbon", synthetic(grid, 11), "energy", higher_is_better=False)
-    m.add("curtailment", synthetic(grid, 12), "energy", higher_is_better=True)
-    m.add("alc", synthetic(grid, 13), "land", higher_is_better=False)
-    m.add("water_stress", synthetic(grid, 14), "water", higher_is_better=False)
-    m.add("heat_reuse", synthetic(grid, 15), "community", higher_is_better=True)
+    m = Model(grid)
+    m.exclude("national_parks", burn_cached(grid, "data/raw/natural_parks.geojson"))
+    m.exclude("sssi",           burn_cached(grid, "data/raw/sssi.geojson"))
+    m.exclude("flood", burn_cached(
+        grid, "data/raw/floodmaps",
+        layer="Flood_Zones_2_3_Rivers_and_Sea",
+        chunk=50_000,
+    ))
+    # Restrict to England: ALC, flood zones and other layers are England-only;
+    # Scottish/Welsh sites would be immune to every checkbox, which is dishonest.
+    m.exclude("non_england", ~eng)
+
+    # Score: proximity to stranded wind capacity only.
+    # ALC is a planning constraint (breach or don't), not a sliding score;
+    # it lives as the checkbox below rather than baked into the ranking.
+    m.add("wind", repd_wind(grid, "data/raw/repd.csv"), "energy",
+          higher_is_better=True)
 
     print(m.report())
     score = m.score()
 
-    # Constraint flags. Each becomes a checkbox. Replace these thresholds
-    # with real tests once real layers are loaded — e.g. ALC grade <= 3a
-    # for "on the best farmland".
+    # Load the already-cached exclusion masks so we can reuse them for the
+    # buffer distance — no re-burning, just reading from data/processed/.
+    parks = burn_cached(grid, "data/raw/natural_parks.geojson")
+    sssi  = burn_cached(grid, "data/raw/sssi.geojson")
+
+    best_farmland = grade_mask(grid, ALC, "ALC_GRADE", ["Grade 1", "Grade 2"])
     flags = {
-        "On the best farmland":
-            m.raw[("land", "alc")] > np.nanpercentile(m.raw[("land", "alc")], 65),
-        "In a water-stressed area":
-            m.raw[("water", "water_stress")] > np.nanpercentile(
-                m.raw[("water", "water_stress")], 60),
-        "Far from any heat customer":
-            m.raw[("community", "heat_reuse")] < np.nanpercentile(
-                m.raw[("community", "heat_reuse")], 40),
-        "On a high-carbon grid":
-            m.raw[("energy", "carbon")] > np.nanpercentile(
-                m.raw[("energy", "carbon")], 55),
+        "Avoids best farmland":           ~best_farmland & eng,
+        "At least 2km from protected land": distance_from_protected(
+            grid, parks, sssi, min_dist_m=2000),
     }
 
-    sites = pick_sites(grid, score, n=40, min_km=25, flags=flags)
-    print(f"\npicked {len(sites)} sites, min 25km apart")
+    sites = pick_sites(grid, score, n=500, min_km=5, flags=flags)
+    print(f"\npicked {len(sites)} sites, min 5km apart")
     for s in sites[:6]:
-        tag = f"  [{', '.join(s['flags'])}]" if s["flags"] else ""
+        tag = f"  [{', '.join(s['flags'])}]" if s["flags"] else "  [fails farmland]"
         print(f"  #{s['rank']:2d} {s['council'][:26]:26s} {s['score']:.3f}{tag}")
 
     out = site_map(
-        sites, flags,
+        sites, flags, grid,
         title="Stranded Power",
-        subtitle="Best sites in Great Britain for a data centre. "
-                 "Tick a constraint to rule out sites that breach it.",
+        subtitle="Best sites for a data centre near stranded wind. "
+                 "Tick a requirement — only sites meeting all conditions are shown.",
     )
     print(f"\nwrote {out}")
 

@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from sp.grid import build_grid
+from sp.layers import burn_cached, repd_wind, england_mask
 from sp.score import Model
 from sp.render import web_map
 
@@ -57,16 +58,17 @@ def main():
           f"{len(grid.lad_names)} LADs | {time.time()-t0:.1f}s")
 
     m = Model(grid)
-    m.exclude("flood", synthetic_exclusion(grid, seed=1))
-    m.exclude("protected", synthetic_exclusion(grid, seed=2, n=25))
+    m.exclude("national_parks", burn_cached(grid, "data/raw/natural_parks.geojson"))
+    m.exclude("sssi", burn_cached(grid, "data/raw/sssi.geojson"))
+    m.exclude("flood", burn_cached(
+        grid, "data/raw/floodmaps",
+        layer="Flood_Zones_2_3_Rivers_and_Sea",
+        chunk=50_000,
+    ))
 
-    # Four criteria across all four pillars, with mixed directions so the
-    # direction handling is genuinely exercised rather than assumed.
-    m.add("carbon", synthetic(grid, 11), "energy", higher_is_better=False)
-    m.add("curtailment", synthetic(grid, 12), "energy", higher_is_better=True)
-    m.add("alc", synthetic(grid, 13), "land", higher_is_better=False)
-    m.add("water_stress", synthetic(grid, 14), "water", higher_is_better=False)
-    m.add("heat_reuse", synthetic(grid, 15), "community", higher_is_better=True)
+    m.exclude("non_england", ~england_mask(grid))
+    m.add("wind", repd_wind(grid, "data/raw/repd.csv"), "energy",
+          higher_is_better=True)
 
     print(m.report())
 
@@ -74,15 +76,14 @@ def main():
     print(f"score range {np.nanmin(score):.3f}-{np.nanmax(score):.3f}")
 
     top = grid.summarise(score).head(5)
-    print("\ntop 5 local authorities (synthetic data, means nothing yet):")
+    print("\ntop 5 local authorities by ALC score (Grade 4/5 land preferred):")
     for _, r in top.iterrows():
         print(f"  {r['lad'][:34]:34s} {r['value']:.3f}  ({int(r['cells'])} cells)")
 
     t0 = time.time()
     out = web_map({
         "Overall score": score,
-        "Energy pillar": m.pillar("energy"),
-        "Land pillar": m.pillar("land"),
+        "Land pillar (ALC)": m.pillar("land"),
     }, grid)
     print(f"\nwrote {out} in {time.time()-t0:.1f}s")
 

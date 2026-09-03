@@ -4,15 +4,62 @@ Produces one self-contained HTML file. Site data is embedded as JSON and
 filtered in the browser, so ticking a constraint is instant — no server,
 no recompute, nothing to go wrong in front of judges.
 
+Each flag mask is warped to WGS84, encoded as a base64 PNG, and embedded
+in the page. The browser ANDs the ticked masks together on a canvas and
+paints the surviving cells as an image overlay. Surviving area in km² is
+derived from the pixel count. The top-20 shortlist pins sit on top.
+
 Leaflet loads from a CDN by default. Before the demo, vendor it locally
 (see vendor_leaflet) so the page works with no network at all.
 """
 
+import base64
+import io
 import json
 import os
 
+import numpy as np
+
 CDN_CSS = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"
-CDN_JS = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
+CDN_JS  = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
+
+# Overlay colour: the accent green at 78% opacity.
+_ACCENT_RGBA = (78, 171, 156, 200)
+
+
+def _mask_to_b64png(bool_mask, grid):
+    """Warp a bool mask to WGS84 and return (data_url, [[s,w],[n,e]])."""
+    from PIL import Image
+    from .render import warp_to_wgs84
+
+    arr = np.where(bool_mask, 1.0, np.nan).astype("float32")
+    warped, bounds = warp_to_wgs84(arr, grid)
+
+    h, w = warped.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    rgba[np.isfinite(warped)] = _ACCENT_RGBA
+
+    buf = io.BytesIO()
+    Image.fromarray(rgba, "RGBA").save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{b64}", bounds
+
+
+def _km2_per_pixel(grid):
+    """km² represented by one pixel in the warped WGS84 image.
+
+    warp_to_wgs84 changes the pixel count slightly vs the source array.
+    Warping the land mask and comparing against the known land cell count
+    gives a stable scale factor for converting canvas pixel counts to km².
+    Each BNG cell is exactly 1 km² at 1000m resolution.
+    """
+    from .render import warp_to_wgs84
+
+    land_f = np.where(grid.land, 1.0, np.nan).astype("float32")
+    warped, _ = warp_to_wgs84(land_f, grid)
+    n_px = int(np.isfinite(warped).sum())
+    return grid.n_land / n_px  # km² per warped pixel
+
 
 TEMPLATE = """<!doctype html>
 <html lang="en">
@@ -42,12 +89,15 @@ TEMPLATE = """<!doctype html>
   .sub { font-size: 0.78rem; color: var(--dim); margin: 4px 0 0; line-height: 1.45; }
 
   .count { border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px; }
+  .count .label { font-size: 0.72rem; color: var(--dim); text-transform: uppercase;
+                  letter-spacing: 0.1em; }
   .count b { font-family: var(--mono); font-size: 2rem; color: var(--accent);
-             display: block; line-height: 1; }
-  .count span { font-size: 0.72rem; color: var(--dim); text-transform: uppercase;
-                letter-spacing: 0.1em; }
-  .count .drop { color: var(--warn); font-family: var(--mono); font-size: 0.78rem;
-                 margin-top: 6px; display: block; }
+             display: block; line-height: 1.1; }
+  .count .unit { font-family: var(--mono); font-size: 0.75rem; color: var(--dim); }
+  .count .sites-line { font-size: 0.74rem; color: var(--dim); margin-top: 8px;
+                       display: block; border-top: 1px solid var(--line); padding-top: 8px; }
+  .count .sites-line b { font-family: var(--mono); font-size: inherit;
+                          color: var(--ink); display: inline; line-height: inherit; }
 
   h2 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.12em;
        color: var(--dim); margin: 0 0 8px; font-weight: 500; }
@@ -62,15 +112,30 @@ TEMPLATE = """<!doctype html>
              color: var(--dim); }
 
   #list { font-size: 0.8rem; }
-  .site { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .site { display: flex; gap: 8px; padding: 5px 0;
+          border-bottom: 1px solid var(--line); cursor: pointer; }
+  .site:hover { color: var(--accent); }
   .site .r { font-family: var(--mono); color: var(--dim); width: 1.6rem; flex: none; }
   .site .s { margin-left: auto; font-family: var(--mono); color: var(--accent); }
 
-  .leaflet-container { background: #0a1211; }
-  .pin { border-radius: 50%; border: 2px solid #0d1817; }
-  @media (max-width: 720px) { body { flex-direction: column; }
+  .leaflet-container { background: #e5e3df; }
+  .pin { border-radius: 50%; border: 1px solid rgba(0,0,0,0.4); }
+
+  #rank-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+  #rank-btns button {
+    flex: 1; padding: 5px 4px; background: none; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 3px;
+    color: var(--dim); font-family: var(--mono); font-size: 0.78rem;
+    transition: border-color 120ms, color 120ms;
+  }
+  #rank-btns button:hover { border-color: var(--ink); color: var(--ink); }
+  #rank-btns button.active { border-color: var(--accent); color: var(--accent); }
+
+  @media (max-width: 720px) {
+    body { flex-direction: column; }
     #panel { width: 100%; height: 46%; border-right: none;
-             border-bottom: 1px solid var(--line); } }
+             border-bottom: 1px solid var(--line); }
+  }
 </style>
 </head>
 <body>
@@ -82,13 +147,22 @@ TEMPLATE = """<!doctype html>
   </div>
 
   <div class="count">
-    <span>Viable sites</span>
-    <b id="n">0</b>
-    <span class="drop" id="drop"></span>
+    <span class="sites-line"><b id="n">__TOTAL__</b> sites</span>
   </div>
 
   <div>
-    <h2>Rule out sites that are…</h2>
+    <h2>Show top N sites</h2>
+    <div id="rank-btns">
+      <button data-n="100">100</button>
+      <button data-n="200">200</button>
+      <button data-n="300">300</button>
+      <button data-n="400">400</button>
+      <button data-n="500" class="active">500</button>
+    </div>
+  </div>
+
+  <div>
+    <h2>Requirements</h2>
     <div id="filters"></div>
   </div>
 
@@ -106,71 +180,90 @@ const SITES = __DATA__;
 const FLAGS = __FLAGS__;
 const TOTAL = SITES.length;
 
-// The panel is built BEFORE any Leaflet call, and the map is optional.
-// If Leaflet or the tile server is unreachable, the counts, checkboxes
-// and shortlist still work. Never let a network failure take the whole
-// demo down.
-let layer = null;
+// ── Panel is built here, BEFORE any Leaflet call. ────────────────────────
+// If the network is down, the counts, checkboxes and shortlist still work.
+const filters = document.getElementById('filters');
+FLAGS.forEach(f => {
+  const el = document.createElement('label');
+  el.innerHTML = `<input type="checkbox" data-flag="${f}"><span>${f}</span>`
+               + `<span class="n"></span>`;
+  filters.appendChild(el);
+});
+
+let rankLimit = TOTAL;
+document.querySelectorAll('#rank-btns button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#rank-btns button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    rankLimit = parseInt(btn.dataset.n);
+    draw();
+  });
+});
+
+// ── Leaflet map (optional — wrapped so offline doesn't break the demo). ──
+let map = null;
+let markerLayer = null;
 
 try {
-  const map = L.map('map', {zoomControl: true}).setView([54.6, -3.2], 6);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  map = L.map('map', {zoomControl: true}).setView([54.6, -3.2], 6);
+  L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_2t3z_1_3c570bf24e91b3a22f2de003',
     {attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18}).addTo(map);
-  layer = L.layerGroup().addTo(map);
+  markerLayer = L.layerGroup().addTo(map);
 } catch (e) {
   document.getElementById('map').innerHTML =
     '<p style="padding:28px;color:#7c8d8a;font:14px system-ui">' +
-    'Map unavailable offline. Site list and filters still work.</p>';
+    'Map unavailable offline. Area counts, filters and site list still work.</p>';
 }
 
-const filters = document.getElementById('filters');
-FLAGS.forEach(f => {
-  const n = SITES.filter(s => s.flags.includes(f)).length;
-  const l = document.createElement('label');
-  l.innerHTML = `<input type="checkbox" data-flag="${f}"><span>${f}</span>`
-              + `<span class="n">${n}</span>`;
-  filters.appendChild(l);
-});
-
+// ── Helpers ───────────────────────────────────────────────────────────────
 function active() {
   return [...document.querySelectorAll('#filters input:checked')]
     .map(i => i.dataset.flag);
 }
 
-function radius(score, lo, hi) {
-  return 5 + 9 * (hi > lo ? (score - lo) / (hi - lo) : 0.5);
-}
-
+// ── Main draw ─────────────────────────────────────────────────────────────
 function draw() {
-  const off = active();
-  const shown = SITES.filter(s => !s.flags.some(f => off.includes(f)));
+  const on = active();
 
-  if (layer) {
-    layer.clearLayers();
-    const lo = Math.min(...SITES.map(s => s.score));
-    const hi = Math.max(...SITES.map(s => s.score));
+  // Apply rank limit first, then AND of ticked requirements.
+  const ranked = rankLimit >= TOTAL ? SITES : SITES.filter(s => s.rank <= rankLimit);
+  const shown = on.length === 0
+    ? ranked
+    : ranked.filter(s => on.every(f => s.flags.includes(f)));
 
+  // ── Per-checkbox counts: sites in current shown set meeting each flag. ─
+  document.querySelectorAll('#filters input[data-flag]').forEach(inp => {
+    const cnt = shown.filter(s => s.flags.includes(inp.dataset.flag)).length;
+    inp.closest('label').querySelector('.n').textContent = cnt;
+  });
+
+  // ── Dots: all shown sites ─────────────────────────────────────────────
+  if (markerLayer) {
+    markerLayer.clearLayers();
     shown.forEach(s => {
       L.circleMarker([s.lat, s.lon], {
-        radius: radius(s.score, lo, hi),
-        className: 'pin', color: '#0d1817', weight: 2,
-        fillColor: '#4eab9c', fillOpacity: 0.9,
-      }).bindPopup(
-        `<b>#${s.rank} &middot; ${s.council}</b><br>score ${s.score}` +
-        (s.flags.length ? `<br><i>${s.flags.join(', ')}</i>` : '')
-      ).addTo(layer);
+        radius: 4, className: 'pin',
+        fillColor: '#4eab9c', fillOpacity: 0.8, weight: 1, color: '#0d1817',
+      }).bindPopup(`<b>#${s.rank}</b> ${s.council}<br>score ${s.score}`)
+        .addTo(markerLayer);
     });
   }
 
+  // ── Site count line ───────────────────────────────────────────────────
   document.getElementById('n').textContent = shown.length;
-  const removed = TOTAL - shown.length;
-  document.getElementById('drop').textContent =
-    removed ? `\\u2212${removed} ruled out of ${TOTAL}` : `all ${TOTAL} viable`;
+  document.querySelector('.count .sites-line').innerHTML =
+    `<b>${shown.length}</b> of top ${rankLimit} sites`;
 
-  document.getElementById('list').innerHTML = shown.slice(0, 14).map(s =>
-    `<div class="site"><span class="r">${s.rank}</span>` +
-    `<span>${s.council}</span><span class="s">${s.score}</span></div>`
-  ).join('') || '<p class="sub">No sites meet every constraint.</p>';
+  // ── Shortlist ─────────────────────────────────────────────────────────
+  if (shown.length === 0 && on.length > 0) {
+    document.getElementById('list').innerHTML =
+      '<p class="sub">No site in Great Britain satisfies all selected conditions.</p>';
+  } else {
+    document.getElementById('list').innerHTML = shown.slice(0, 20).map(s =>
+      `<div class="site"><span class="r">#${s.rank}</span>` +
+      `<span>${s.council}</span><span class="s">${s.score}</span></div>`
+    ).join('');
+  }
 }
 
 filters.addEventListener('change', draw);
@@ -181,20 +274,25 @@ draw();
 """
 
 
-def site_map(sites, flags, path="out/sites.html",
+def site_map(sites, flags, grid, path="out/sites.html",
              title="Candidate Sites",
-             subtitle="Tick a constraint to rule out sites that breach it.",
+             subtitle="Tick a requirement — only sites meeting all ticked conditions are shown.",
              leaflet_css=CDN_CSS, leaflet_js=CDN_JS):
-    """Write the interactive site map to `path`."""
+    """Write the interactive site map to `path`.
+
+    flags : dict of {display_name: bool_array} — one entry per checkbox.
+    grid  : Grid object — used for the land mask extent.
+    """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     html = (TEMPLATE
-            .replace("__TITLE__", title)
+            .replace("__TITLE__",    title)
             .replace("__SUBTITLE__", subtitle)
-            .replace("__CSS__", leaflet_css)
-            .replace("__JS__", leaflet_js)
-            .replace("__DATA__", json.dumps(sites))
-            .replace("__FLAGS__", json.dumps(list(flags))))
+            .replace("__CSS__",      leaflet_css)
+            .replace("__JS__",       leaflet_js)
+            .replace("__DATA__",     json.dumps(sites))
+            .replace("__FLAGS__",    json.dumps(list(flags)))
+            .replace("__TOTAL__",    str(len(sites))))
 
     with open(path, "w") as f:
         f.write(html)
@@ -206,7 +304,7 @@ def vendor_leaflet(dest="out/vendor"):
 
     Run once, well before the day. Then pass the local paths:
 
-        site_map(sites, flags,
+        site_map(sites, flags, grid,
                  leaflet_css="vendor/leaflet.css",
                  leaflet_js="vendor/leaflet.js")
     """

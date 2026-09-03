@@ -62,7 +62,13 @@ are directly comparable to published work.
 
 | Checkbox | Condition | Source |
 |---|---|---|
-| Avoids best farmland | Not ALC grade 1, 2 or 3a | Natural England |
+| Avoids best farmland | Not ALC grade 1 or 2 | Natural England |
+
+> **Note:** The Provisional ALC dataset does not sub-grade Grade 3 into 3a
+> and 3b. Claiming "not 3a" would be false precision. Grade 3 land is
+> therefore excluded from this filter entirely, which understates the
+> constraint — some Grade 3 cells are 3a (good-quality arable) and should
+> arguably be protected. A fully sub-graded source would tighten this.
 | Avoids Green Belt | Outside designated Green Belt | MHCLG |
 | Previously developed | On brownfield land | Brownfield registers / OSM |
 
